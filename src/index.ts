@@ -6,8 +6,14 @@ const PORT = 4000;
 const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8000";
 
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    /\.vercel\.app$/,  // ✅ allows any Vercel deployment URL
+  ],
 }));
+
 
 app.use(express.json());
 
