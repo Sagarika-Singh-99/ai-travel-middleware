@@ -1,77 +1,58 @@
-import express, { Request, Response } from "express";
-import cors from "cors";
+import express, { Request, Response } from 'express';
+import cors from 'cors';
 
 const app = express();
-const PORT = 4000;
-const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8000";
 
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    /\.vercel\.app$/,  // ✅ allows any Vercel deployment URL
-  ],
-}));
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
+const FASTAPI_URL = process.env.FASTAPI_URL || 'https://your-fastapi-app.onrender.com/plan-trip';
 
+app.use(cors());
 app.use(express.json());
 
-app.get("/", (_req: Request, res: Response) => {
-  res.send("Middleware is running");
+// Health check — visiting the URL in browser hits this
+app.get('/', (req: Request, res: Response) => {
+  res.json({ status: 'Middleware is running OK' });
 });
 
-app.post("/api/plan-trip", async (req: Request, res: Response) => {
-  const { destination, days, vibe } = req.body;
-
-  // Basic validation
-  if (!destination || !days || !vibe) {
-    res.status(400).json({ error: "Missing required fields" });
-    return;
-  }
-
+// Main route — React frontend calls this
+app.post('/api/plan-trip', async (req: Request, res: Response) => {
   try {
-    // Forward request to FastAPI
-    const fastApiRes = await fetch(`${FASTAPI_URL}/plan-trip`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination, days, vibe }),
+    console.log('Received request:', req.body);
+
+    const fastapiRes = await fetch(FASTAPI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
     });
 
-    if (!fastApiRes.ok) {
-      res.status(fastApiRes.status).json({ error: "FastAPI error" });
-      return;
+    if (!fastapiRes.ok) {
+      throw new Error(`FastAPI returned ${fastapiRes.status}`);
     }
 
-    // ✅ Set SSE headers so React knows this is a stream
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders(); // Send headers immediately
+    // Stream SSE back to frontend
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
 
-    // ✅ Pipe each chunk from FastAPI straight to React
-    const reader = fastApiRes.body!.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      res.write(chunk); // Forward chunk immediately to React
+    const reader = fastapiRes.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+      }
     }
+    res.end();
 
-    res.end(); // Close the stream
-
-  } catch (err) {
-    console.error("Middleware error:", err);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: (error as Error).message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Middleware running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
-
-// FastAPI sends chunk → reader.read() catches it → res.write() forwards it → React receives it instantly
-
