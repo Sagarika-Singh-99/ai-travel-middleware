@@ -17,6 +17,10 @@ app.use(cors({
 
 app.use(express.json());
 
+app.get("/", (_req: Request, res: Response) => {
+  res.send("Middleware is running");
+});
+
 app.post("/api/plan-trip", async (req: Request, res: Response) => {
   const { destination, days, vibe } = req.body;
 
